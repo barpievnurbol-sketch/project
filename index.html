@@ -709,7 +709,7 @@
       return 1 - Math.pow(1 - t, 3);
     }
 
-    function getWordPopScale(age, peakScale = 1.24, totalDur = 0.36) {
+    function getWordPopScale(age, peakScale = 1.26, totalDur = 0.36) {
       if (age <= 0) return 0.82;
       if (age >= totalDur) return 1.0;
       const peakTime = totalDur * 0.34;
@@ -724,6 +724,7 @@
       }
     }
 
+    // Разбиваем слова на строки, чтобы слова оставались крупными и не сжимались в ширину
     function wrapWordsToLines(items, spaceW, maxLineW) {
       const lines = [];
       let currentLine = [];
@@ -749,16 +750,16 @@
     }
 
     function drawPillBackdrop(cx, cy, textW, textH, alpha) {
-      const padX = Math.max(14, textW * 0.16);
-      const padY = Math.max(8, textH * 0.32);
-      const boxW = Math.min(viewW - 24, textW + padX * 2);
+      const padX = Math.max(16, textW * 0.14);
+      const padY = Math.max(9, textH * 0.3);
+      const boxW = Math.min(viewW - 20, textW + padX * 2);
       const boxH = textH + padY * 2;
       const rad = Math.min(14, boxH * 0.35);
       const x = cx - boxW / 2;
       const y = cy - boxH / 2;
 
       ctx.save();
-      ctx.globalAlpha = Math.max(0, Math.min(0.76, alpha * 0.72));
+      ctx.globalAlpha = Math.max(0, Math.min(0.78, alpha * 0.74));
       ctx.fillStyle = "#100e16";
       ctx.beginPath();
       ctx.roundRect(x, y, boxW, boxH, rad);
@@ -783,12 +784,12 @@
       const freeBelowArt = h - artBottom;
       let anchorY;
       if (isMobile && freeBelowArt > 56) {
-        anchorY = artBottom + Math.min(freeBelowArt * 0.34, 48);
+        anchorY = artBottom + Math.min(freeBelowArt * 0.28, 36);
       } else {
-        anchorY = h - Math.max(isMobile ? 78 : 48, h * 0.085);
+        anchorY = h - Math.max(isMobile ? 82 : 52, h * 0.09);
       }
 
-      // 1. Режим «Одно слово» (основной для телефона)
+      // 1. Режим «Одно слово» — максимально крупное слово в центре нижней зоны
       if (mode === "soloCenter") {
         let curIdx = -1;
         for (let i = 0; i < phrase.words.length; i++) {
@@ -814,22 +815,22 @@
         if (alpha <= 0.01) return;
 
         let fontSize = isMobile
-          ? Math.max(28, Math.round(w * (isDream ? 0.082 : 0.072)))
-          : Math.max(30, Math.round(w * (isDream ? 0.046 : 0.038)));
+          ? Math.max(36, Math.round(w * (isDream ? 0.105 : 0.092)))
+          : Math.max(34, Math.round(w * (isDream ? 0.052 : 0.044)));
 
         ctx.save();
         ctx.font = `bold ${fontSize}px Consolas, "DejaVu Sans Mono", monospace`;
-        const maxWordW = w * 0.84;
-        const measured = ctx.measureText(wordText).width * 1.26;
+        const maxWordW = w * 0.88;
+        const measured = ctx.measureText(wordText).width * 1.28;
         if (measured > maxWordW) {
-          fontSize = Math.max(22, Math.floor(fontSize * (maxWordW / measured)));
+          fontSize = Math.max(26, Math.floor(fontSize * (maxWordW / measured)));
           ctx.font = `bold ${fontSize}px Consolas, "DejaVu Sans Mono", monospace`;
         }
         const wordW = ctx.measureText(wordText).width;
         ctx.restore();
 
         const baseY = anchorY + exitRiseY + (1 - eased) * 12;
-        const scale = getWordPopScale(wordAge, 1.26, 0.36) + bass * 0.03;
+        const scale = getWordPopScale(wordAge, 1.28, 0.36) + bass * 0.03;
         const flash = Math.max(0, 1 - wordAge / 0.34);
 
         drawPillBackdrop(w / 2, baseY, wordW * scale, fontSize, alpha);
@@ -853,14 +854,14 @@
         return;
       }
 
-      // 2. Режимы «Слово за словом» и «Караоке»
+      // 2. Режимы «Слово за словом» и «Караоке» — крупный шрифт с автопереносом на несколько строк
       const subFontSize = isMobile
-        ? Math.max(18, Math.round(w * (isDream ? 0.052 : 0.044)))
-        : Math.max(20, Math.round(w * (isDream ? 0.031 : 0.024)));
+        ? Math.max(23, Math.round(w * (isDream ? 0.068 : 0.060)))
+        : Math.max(22, Math.round(w * (isDream ? 0.035 : 0.028)));
       ctx.font = `bold ${subFontSize}px Consolas, "DejaVu Sans Mono", monospace`;
       ctx.textBaseline = "middle";
 
-      const spaceW = ctx.measureText(" ").width * (isDream ? 1.22 : 1.08);
+      const spaceW = ctx.measureText(" ").width * (isDream ? 1.25 : 1.15);
       const allItems = phrase.words.map(([wStart, wText], idx) => {
         const wAge = tLoop - wStart;
         const width = ctx.measureText(wText).width;
@@ -877,13 +878,16 @@
 
       if (activeItems.length === 0) return;
 
-      const maxLineW = w * 0.86;
+      const maxLineW = w * 0.88;
       const lines = wrapWordsToLines(activeItems, spaceW, maxLineW);
-      const lineHeight = subFontSize * 1.45;
+      const lineHeight = subFontSize * 1.48;
+      const startY = isMobile && lines.length > 1
+        ? anchorY - ((lines.length - 1) * lineHeight) * 0.25
+        : anchorY;
 
       for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
         const lineObj = lines[lineIdx];
-        const lineY = anchorY + lineIdx * lineHeight + exitRiseY;
+        const lineY = startY + lineIdx * lineHeight + exitRiseY;
         let cursorX = (w - lineObj.width) / 2;
 
         drawPillBackdrop(w / 2, lineY, lineObj.width, subFontSize, exitAlpha);
@@ -907,12 +911,12 @@
           if (mode === "wordByWord") {
             alpha *= Math.min(1, p * 2.0);
             offsetY = (1 - eased) * 12 + Math.sin(elapsed * 2.6 + item.idx * 0.7) * (1.2 + bass * 1.4);
-            scale = getWordPopScale(item.wAge, 1.24, 0.36);
+            scale = getWordPopScale(item.wAge, 1.26, 0.36);
             rot = (1 - eased) * (item.idx % 2 === 0 ? -0.03 : 0.03);
           } else {
             alpha *= isSung ? 1.0 : 0.3;
             offsetY = isSung ? (1 - eased) * 8 - flash * 3 : 0;
-            scale = isSung ? getWordPopScale(item.wAge, 1.22, 0.34) : 0.96;
+            scale = isSung ? getWordPopScale(item.wAge, 1.24, 0.34) : 0.96;
           }
 
           if (alpha <= 0.01) continue;
