@@ -2,34 +2,66 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Reze — Living Art</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
-      width: 100%; height: 100%; background: #0e0d12; color: #f6dce4;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      background: #0e0d12;
+      color: #f6dce4;
       font-family: Consolas, "DejaVu Sans Mono", monospace;
-      overflow: hidden; user-select: none;
+      overflow: hidden;
+      user-select: none;
     }
-    #stage { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+    #stage {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100dvh;
+      display: block;
+    }
     #hud {
-      position: fixed; top: 14px; left: 14px; z-index: 10;
-      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-      background: rgba(14, 13, 18, 0.78);
-      border: 1px solid rgba(255, 204, 184, 0.28);
-      border-radius: 10px; padding: 8px 12px;
+      position: fixed;
+      top: max(12px, env(safe-area-inset-top));
+      left: 12px;
+      right: 12px;
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      align-items: center;
+      width: fit-content;
+      max-width: calc(100vw - 24px);
+      background: rgba(14, 13, 18, 0.82);
+      border: 1px solid rgba(255, 204, 184, 0.3);
+      border-radius: 10px;
+      padding: 8px 10px;
       backdrop-filter: blur(8px);
       transition: opacity 0.25s ease;
     }
     #hud.hidden { opacity: 0; pointer-events: none; }
     button, label.file-btn {
-      background: rgba(255, 204, 184, 0.14); color: #fff0e8;
-      border: 1px solid rgba(255, 204, 184, 0.34);
-      border-radius: 7px; padding: 6px 11px; font: inherit; font-size: 13px; cursor: pointer;
+      background: rgba(255, 204, 184, 0.15);
+      color: #fff0e8;
+      border: 1px solid rgba(255, 204, 184, 0.36);
+      border-radius: 7px;
+      padding: 6px 10px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
     }
-    button:hover, label.file-btn:hover { background: rgba(255, 204, 184, 0.26); }
+    button:hover, label.file-btn:hover { background: rgba(255, 204, 184, 0.28); }
     input[type="file"] { display: none; }
-    #status { font-size: 12px; color: #d8c4be; margin-left: 4px; }
+    #status { font-size: 12px; color: #d8c4be; margin-left: 2px; }
+    @media (max-width: 640px) {
+      button, label.file-btn {
+        font-size: 12px;
+        padding: 6px 9px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -305,6 +337,9 @@
     let dstPixels = null;
     let artReady = false;
 
+    let viewW = window.innerWidth;
+    let viewH = window.innerHeight;
+
     let clouds = [];
     let dustMotes = [];
 
@@ -510,10 +545,10 @@
 
     function resize() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
+      viewW = window.visualViewport ? window.visualViewport.width : window.innerWidth;
+      viewH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      canvas.width = Math.floor(viewW * dpr);
+      canvas.height = Math.floor(viewH * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
@@ -674,7 +709,6 @@
       return 1 - Math.pow(1 - t, 3);
     }
 
-    // Импульс масштаба: слово быстро вырастает до peakScale при выходе и плавно возвращается в 1.0
     function getWordPopScale(age, peakScale = 1.24, totalDur = 0.36) {
       if (age <= 0) return 0.82;
       if (age >= totalDur) return 1.0;
@@ -690,11 +724,37 @@
       }
     }
 
-    function renderAnimatedLyrics(w, h, elapsed, bass) {
+    // Разбиваем видимые слова на строки, чтобы на телефоне текст не обрезался по краям
+    function wrapWordsToLines(items, spaceW, maxLineW) {
+      const lines = [];
+      let currentLine = [];
+      let currentW = 0;
+
+      for (const item of items) {
+        const effectiveW = item.width * item.appearWeight;
+        const addW = currentLine.length > 0 ? effectiveW + spaceW * item.appearWeight : effectiveW;
+
+        if (currentLine.length > 0 && currentW + addW > maxLineW) {
+          lines.push({ items: currentLine, width: currentW });
+          currentLine = [item];
+          currentW = effectiveW;
+        } else {
+          currentLine.push(item);
+          currentW += addW;
+        }
+      }
+      if (currentLine.length > 0) {
+        lines.push({ items: currentLine, width: currentW });
+      }
+      return lines;
+    }
+
+    function renderAnimatedLyrics(w, h, drawY, drawH, elapsed, bass) {
       const trackSec = getTrackTimeSec();
       const { phrase, tLoop } = getActivePhrase(trackSec);
       const isDream = Boolean(phrase.isDream);
       const mode = LYRIC_MODES[lyricModeIndex].id;
+      const isMobile = w < 640;
 
       const timeLeft = Math.max(0, phrase.end - tLoop);
       const exitWindow = 0.30;
@@ -702,7 +762,18 @@
       const exitAlpha = 1 - exitProgress * exitProgress;
       const exitRiseY = -exitProgress * 10;
 
-      // 1. Режим «Одно слово»: крупно по центру с импульсом увеличения при выходе
+      // Позиция по вертикали: на телефоне размещаем сразу под квадратной картинкой (в нижней свободной зоне),
+      // а на широком экране — в нижней части изображения с безопасным отступом
+      const artBottom = drawY + drawH;
+      const freeBelowArt = h - artBottom;
+      let anchorY;
+      if (isMobile && freeBelowArt > 64) {
+        anchorY = artBottom + Math.min(freeBelowArt * 0.42, 68);
+      } else {
+        anchorY = h - Math.max(isMobile ? 56 : 42, h * 0.065);
+      }
+
+      // 1. Режим «Одно слово»
       if (mode === "soloCenter") {
         let curIdx = -1;
         for (let i = 0; i < phrase.words.length; i++) {
@@ -727,8 +798,10 @@
         const alpha = Math.min(1, p * 2.0) * wordFadeOut * exitAlpha;
         if (alpha <= 0.01) return;
 
-        const fontSize = Math.max(28, Math.round(w * (isDream ? 0.044 : 0.036)));
-        const baseY = h - Math.max(46, h * 0.072) + exitRiseY + (1 - eased) * 14;
+        const fontSize = isMobile
+          ? Math.max(26, Math.round(w * (isDream ? 0.075 : 0.065)))
+          : Math.max(28, Math.round(w * (isDream ? 0.044 : 0.036)));
+        const baseY = anchorY + exitRiseY + (1 - eased) * 14;
         const scale = getWordPopScale(wordAge, 1.26, 0.36) + bass * 0.03;
         const flash = Math.max(0, 1 - wordAge / 0.34);
 
@@ -751,13 +824,15 @@
         return;
       }
 
-      // 2. Режимы «Слово за словом» и «Караоке»
-      const subFontSize = Math.max(20, Math.round(w * (isDream ? 0.031 : 0.024)));
+      // 2. Режимы «Слово за словом» и «Караоке» с автопереносом на телефоне
+      const subFontSize = isMobile
+        ? Math.max(19, Math.round(w * (isDream ? 0.056 : 0.048)))
+        : Math.max(20, Math.round(w * (isDream ? 0.031 : 0.024)));
       ctx.font = `bold ${subFontSize}px Consolas, "DejaVu Sans Mono", monospace`;
       ctx.textBaseline = "middle";
 
-      const spaceW = ctx.measureText(" ").width * (isDream ? 1.32 : 1.18);
-      const wordItems = phrase.words.map(([wStart, wText], idx) => {
+      const spaceW = ctx.measureText(" ").width * (isDream ? 1.25 : 1.12);
+      const allItems = phrase.words.map(([wStart, wText], idx) => {
         const wAge = tLoop - wStart;
         const width = ctx.measureText(wText).width;
         const appearWeight =
@@ -767,81 +842,80 @@
         return { wStart, wText, idx, wAge, width, appearWeight };
       });
 
-      let visibleTotalWidth = 0;
-      let startedCount = 0;
-      for (const item of wordItems) {
-        if (item.appearWeight > 0) {
-          if (startedCount > 0) visibleTotalWidth += spaceW * item.appearWeight;
-          visibleTotalWidth += item.width * item.appearWeight;
-          startedCount++;
+      const activeItems = mode === "wordByWord"
+        ? allItems.filter((item) => item.wAge >= 0)
+        : allItems;
+
+      if (activeItems.length === 0) return;
+
+      const maxLineW = w * 0.88;
+      const lines = wrapWordsToLines(activeItems, spaceW, maxLineW);
+      const lineHeight = subFontSize * 1.42;
+
+      for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        const lineObj = lines[lineIdx];
+        const lineY = anchorY + lineIdx * lineHeight + exitRiseY;
+        let cursorX = (w - lineObj.width) / 2;
+
+        for (const item of lineObj.items) {
+          const effectiveW = item.width * item.appearWeight;
+          const wordCenterX = cursorX + effectiveW / 2;
+          cursorX += effectiveW + spaceW * item.appearWeight;
+
+          const isSung = item.wAge >= 0;
+          const enterDur = 0.24;
+          const p = isSung ? Math.min(1, item.wAge / enterDur) : 0;
+          const eased = isSung ? easeOutCubic(p) : 0;
+          const flash = isSung ? Math.max(0, 1 - item.wAge / 0.38) : 0;
+
+          let alpha = exitAlpha;
+          let offsetY = 0;
+          let scale = 1;
+          let rot = 0;
+
+          if (mode === "wordByWord") {
+            alpha *= Math.min(1, p * 2.0);
+            offsetY = (1 - eased) * 14 + Math.sin(elapsed * 2.6 + item.idx * 0.7) * (1.4 + bass * 1.6);
+            scale = getWordPopScale(item.wAge, 1.24, 0.36);
+            rot = (1 - eased) * (item.idx % 2 === 0 ? -0.035 : 0.035);
+          } else {
+            alpha *= isSung ? 1.0 : 0.28;
+            offsetY = isSung ? (1 - eased) * 8 - flash * 3 : 0;
+            scale = isSung ? getWordPopScale(item.wAge, 1.22, 0.34) : 0.96;
+          }
+
+          if (alpha <= 0.01) continue;
+
+          ctx.save();
+          ctx.translate(wordCenterX, lineY + offsetY);
+          ctx.rotate(rot);
+          ctx.scale(scale, scale);
+          ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+          ctx.textAlign = "center";
+
+          if (isSung && (isDream || flash > 0.05)) {
+            ctx.shadowColor = isDream
+              ? `rgba(255, 200, 224, ${(0.55 + flash * 0.45).toFixed(2)})`
+              : `rgba(255, 214, 192, ${(flash * 0.9).toFixed(2)})`;
+            ctx.shadowBlur = isDream ? 16 + bass * 8 : 14 * flash;
+          } else {
+            ctx.shadowColor = "rgba(0, 0, 0, 0.95)";
+            ctx.shadowBlur = 8;
+          }
+
+          if (!isSung) {
+            ctx.fillStyle = "#cbb8b4";
+          } else if (isDream) {
+            ctx.fillStyle = flash > 0.18 ? "#ffffff" : "#ffe4ee";
+          } else if (flash > 0.15) {
+            ctx.fillStyle = "#ffffff";
+          } else {
+            ctx.fillStyle = item.idx % 2 === 0 ? "#f7d9bd" : "#ffdce4";
+          }
+
+          ctx.fillText(item.wText, 0, 0);
+          ctx.restore();
         }
-      }
-
-      if (startedCount === 0) return;
-
-      const baseY = h - Math.max(38, h * 0.06) + exitRiseY;
-      let cursorX = (w - visibleTotalWidth) / 2;
-
-      for (const item of wordItems) {
-        if (mode === "wordByWord" && item.wAge < 0) continue;
-
-        const effectiveW = item.width * item.appearWeight;
-        const wordCenterX = cursorX + effectiveW / 2;
-        cursorX += effectiveW + spaceW * item.appearWeight;
-
-        const isSung = item.wAge >= 0;
-        const enterDur = 0.24;
-        const p = isSung ? Math.min(1, item.wAge / enterDur) : 0;
-        const eased = isSung ? easeOutCubic(p) : 0;
-        const flash = isSung ? Math.max(0, 1 - item.wAge / 0.38) : 0;
-
-        let alpha = exitAlpha;
-        let offsetY = 0;
-        let scale = 1;
-        let rot = 0;
-
-        if (mode === "wordByWord") {
-          alpha *= Math.min(1, p * 2.0);
-          offsetY = (1 - eased) * 14 + Math.sin(elapsed * 2.6 + item.idx * 0.7) * (1.4 + bass * 1.6);
-          scale = getWordPopScale(item.wAge, 1.24, 0.36);
-          rot = (1 - eased) * (item.idx % 2 === 0 ? -0.035 : 0.035);
-        } else {
-          alpha *= isSung ? 1.0 : 0.26;
-          offsetY = isSung ? (1 - eased) * 8 - flash * 3 : 0;
-          scale = isSung ? getWordPopScale(item.wAge, 1.22, 0.34) : 0.96;
-        }
-
-        if (alpha <= 0.01) continue;
-
-        ctx.save();
-        ctx.translate(wordCenterX, baseY + offsetY);
-        ctx.rotate(rot);
-        ctx.scale(scale, scale);
-        ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
-        ctx.textAlign = "center";
-
-        if (isSung && (isDream || flash > 0.05)) {
-          ctx.shadowColor = isDream
-            ? `rgba(255, 200, 224, ${(0.55 + flash * 0.45).toFixed(2)})`
-            : `rgba(255, 214, 192, ${(flash * 0.9).toFixed(2)})`;
-          ctx.shadowBlur = isDream ? 16 + bass * 8 : 14 * flash;
-        } else {
-          ctx.shadowColor = "rgba(0, 0, 0, 0.92)";
-          ctx.shadowBlur = 8;
-        }
-
-        if (!isSung) {
-          ctx.fillStyle = "#cbb8b4";
-        } else if (isDream) {
-          ctx.fillStyle = flash > 0.18 ? "#ffffff" : "#ffe4ee";
-        } else if (flash > 0.15) {
-          ctx.fillStyle = "#ffffff";
-        } else {
-          ctx.fillStyle = item.idx % 2 === 0 ? "#f7d9bd" : "#ffdce4";
-        }
-
-        ctx.fillText(item.wText, 0, 0);
-        ctx.restore();
       }
     }
 
@@ -950,14 +1024,19 @@
       const dt = Math.min(0.05, (now - lastFrame) / 1000);
       lastFrame = now;
       const elapsed = now / 1000;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const w = viewW;
+      const h = viewH;
 
       const windMult = WIND_MODES[windIndex].mult;
       const bass = getBassEnergy(elapsed);
 
       ctx.fillStyle = "#0e0d12";
       ctx.fillRect(0, 0, w, h);
+
+      let drawX = 0;
+      let drawY = h * 0.25;
+      let drawW = w;
+      let drawH = w;
 
       if (artReady) {
         updateCloudsBuffer(dt, windMult);
@@ -971,14 +1050,14 @@
         ctx.restore();
 
         const artAspect = simW / simH;
-        let drawH = h;
-        let drawW = drawH * artAspect;
+        drawH = h;
+        drawW = drawH * artAspect;
         if (drawW > w) {
           drawW = w;
           drawH = drawW / artAspect;
         }
-        const drawX = (w - drawW) / 2;
-        const drawY = (h - drawH) / 2;
+        drawX = (w - drawW) / 2;
+        drawY = (h - drawH) / 2;
 
         ctx.save();
         ctx.imageSmoothingEnabled = true;
@@ -1007,12 +1086,15 @@
         ctx.restore();
       }
 
-      renderAnimatedLyrics(w, h, elapsed, bass);
+      renderAnimatedLyrics(w, h, drawY, drawH, elapsed, bass);
 
       requestAnimationFrame(render);
     }
 
     window.addEventListener("resize", resize);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", resize);
+    }
     resize();
     loadAssets();
     requestAnimationFrame(render);
