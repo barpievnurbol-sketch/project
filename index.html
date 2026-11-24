@@ -54,6 +54,11 @@
       cursor: pointer;
     }
     button:hover, label.file-btn:hover { background: rgba(255, 204, 184, 0.28); }
+    button.start-btn {
+      background: rgba(255, 198, 178, 0.28);
+      border-color: rgba(255, 214, 196, 0.65);
+      font-weight: bold;
+    }
     input[type="file"] { display: none; }
     #status { font-size: 12px; color: #d8c4be; margin-left: 2px; }
     @media (max-width: 640px) {
@@ -68,7 +73,7 @@
   <canvas id="stage"></canvas>
 
   <div id="hud">
-    <button id="playBtn">Play / Pause</button>
+    <button id="playBtn" class="start-btn">Начать</button>
     <button id="restartBtn">Restart</button>
     <button id="windBtn">Ветер: 1.0x</button>
     <button id="lyricAnimBtn">Текст: Одно слово</button>
@@ -81,7 +86,7 @@
       <input id="audioInput" type="file" accept="audio/*" />
     </label>
     <button id="hideHudBtn">Скрыть (H)</button>
-    <span id="status">Загрузка...</span>
+    <span id="status">На паузе</span>
   </div>
 
   <audio id="bgm" preload="auto" loop crossorigin="anonymous"></audio>
@@ -302,6 +307,7 @@
     const audio = document.getElementById("bgm");
     const statusEl = document.getElementById("status");
     const hud = document.getElementById("hud");
+    const playBtn = document.getElementById("playBtn");
     const windBtn = document.getElementById("windBtn");
     const lyricAnimBtn = document.getElementById("lyricAnimBtn");
 
@@ -342,11 +348,15 @@
 
     let clouds = [];
     let dustMotes = [];
+    let sakuraPetals = [];
 
-    let timerStart = performance.now();
-    let pausedAt = 0;
+    const bootNow = performance.now();
+    let timerStart = bootNow;
+    let pausedAt = bootNow;
     let pausedTotal = 0;
-    let isPlaying = true;
+    let isPlaying = false;
+    let hasStartedOnce = false;
+    let animTime = 0;
 
     let audioCtx = null;
     let analyser = null;
@@ -370,12 +380,13 @@
     }
 
     function getBassEnergy(elapsed) {
-      if (analyser && freqData && !audio.paused) {
+      if (analyser && freqData && isPlaying && !audio.paused) {
         analyser.getByteFrequencyData(freqData);
         let sum = 0;
         for (let i = 0; i < 6; i++) sum += freqData[i];
         return Math.min(1, (sum / (6 * 255)) * 1.25);
       }
+      if (!isPlaying) return 0;
       const beatPhase = (elapsed * (106 / 60)) % 1;
       return Math.exp(-beatPhase * 4.8) * 0.35;
     }
@@ -421,6 +432,99 @@
         octx.restore();
       }
       return off;
+    }
+
+    function createSakuraPetal(randomX = true) {
+      const size = 24 + Math.random() * 20;
+      return {
+        x: randomX ? Math.random() * (viewW + 120) - 60 : -size * 1.5 - Math.random() * 80,
+        y: Math.random() * (viewH * 0.88),
+        size,
+        vx: 28 + Math.random() * 34,
+        vy: 14 + Math.random() * 20,
+        angle: Math.random() * Math.PI * 2,
+        vAngle: (Math.random() < 0.5 ? -1 : 1) * (0.65 + Math.random() * 1.15),
+        swayPhase: Math.random() * Math.PI * 2,
+        swayFreq: 1.4 + Math.random() * 1.4,
+        swayAmp: 12 + Math.random() * 16,
+        tiltPhase: Math.random() * Math.PI * 2,
+        tiltFreq: 2.0 + Math.random() * 1.8,
+        alpha: 0.72 + Math.random() * 0.22,
+        tint: Math.random()
+      };
+    }
+
+    function initSakuraPetals() {
+      const count = viewW < 640 ? 11 : 16;
+      sakuraPetals = [];
+      for (let i = 0; i < count; i++) {
+        sakuraPetals.push(createSakuraPetal(true));
+      }
+    }
+
+    function drawSakuraPetal(p, elapsed) {
+      const tiltScaleY = 0.42 + 0.58 * Math.abs(Math.cos(elapsed * p.tiltFreq + p.tiltPhase));
+      const r = p.size * 0.5;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.scale(1, tiltScaleY);
+      ctx.globalAlpha = p.alpha;
+
+      const grad = ctx.createLinearGradient(-r, -r, r, r);
+      if (p.tint < 0.45) {
+        grad.addColorStop(0, "#fff0f5");
+        grad.addColorStop(0.65, "#ffc6da");
+        grad.addColorStop(1, "#f29cb9");
+      } else if (p.tint < 0.8) {
+        grad.addColorStop(0, "#ffe6ef");
+        grad.addColorStop(0.65, "#ffb6d0");
+        grad.addColorStop(1, "#e888aa");
+      } else {
+        grad.addColorStop(0, "#fff5f8");
+        grad.addColorStop(0.7, "#ffd2e2");
+        grad.addColorStop(1, "#f5a6c2");
+      }
+
+      ctx.fillStyle = grad;
+      ctx.shadowColor = "rgba(255, 182, 210, 0.35)";
+      ctx.shadowBlur = 10;
+
+      ctx.beginPath();
+      ctx.moveTo(0, -r);
+      ctx.bezierCurveTo(r * 0.95, -r * 0.85, r * 1.15, r * 0.25, 0, r);
+      ctx.bezierCurveTo(-r * 1.15, r * 0.25, -r * 0.95, -r * 0.85, 0, -r);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(255, 245, 250, 0.55)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function updateAndRenderSakura(dt, windMult, elapsed) {
+      for (let i = 0; i < sakuraPetals.length; i++) {
+        const p = sakuraPetals[i];
+        if (isPlaying && dt > 0) {
+          const gust = 0.85 + 0.35 * Math.sin(elapsed * 0.9 + p.swayPhase);
+          p.x += p.vx * windMult * gust * dt;
+          p.y += (p.vy + Math.sin(elapsed * p.swayFreq + p.swayPhase) * p.swayAmp) * dt;
+          p.angle += p.vAngle * windMult * dt;
+
+          if (p.x > viewW + p.size * 2.2 || p.y > viewH + p.size * 2.2) {
+            const fresh = createSakuraPetal(false);
+            fresh.y = p.y > viewH + p.size * 1.5
+              ? -p.size * 1.5 - Math.random() * 60
+              : Math.random() * (viewH * 0.75);
+            sakuraPetals[i] = fresh;
+          }
+        }
+        drawSakuraPetal(sakuraPetals[i], elapsed);
+      }
     }
 
     function initCloudsAndParticles() {
@@ -540,7 +644,9 @@
       bgctx.drawImage(img, -16, -16, 192, 192);
 
       initCloudsAndParticles();
-      statusEl.textContent = "Готово";
+      updateCloudsBuffer(0, WIND_MODES[windIndex].mult);
+      updateLivingFrame(0, WIND_MODES[windIndex].mult, 0);
+      statusEl.textContent = isPlaying ? "Играет" : "На паузе";
     }
 
     function resize() {
@@ -550,12 +656,15 @@
       canvas.width = Math.floor(viewW * dpr);
       canvas.height = Math.floor(viewH * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (sakuraPetals.length === 0) {
+        initSakuraPetals();
+      }
     }
 
     function updateCloudsBuffer(dt, windMult) {
       cctx.clearRect(0, 0, simW, simH);
       for (const cl of clouds) {
-        if (isPlaying) {
+        if (isPlaying && dt > 0) {
           cl.x += cl.speed * windMult * dt;
           if (cl.x - cl.sprite.width * 0.5 > simW + 20) {
             cl.x = -cl.sprite.width * 0.5 - 20;
@@ -683,11 +792,13 @@
     }
 
     function getTrackTimeSec() {
+      if (!isPlaying) {
+        return Math.max(0, (pausedAt - timerStart - pausedTotal) / 1000);
+      }
       if (audio.src && !audio.paused && !Number.isNaN(audio.currentTime)) {
         return audio.currentTime;
       }
-      const now = isPlaying ? performance.now() : (pausedAt || performance.now());
-      return Math.max(0, (now - timerStart - pausedTotal) / 1000);
+      return Math.max(0, (performance.now() - timerStart - pausedTotal) / 1000);
     }
 
     function getActivePhrase(tSec) {
@@ -724,7 +835,6 @@
       }
     }
 
-    // Разбиваем слова на строки, чтобы слова оставались крупными и не сжимались в ширину
     function wrapWordsToLines(items, spaceW, maxLineW) {
       const lines = [];
       let currentLine = [];
@@ -769,6 +879,10 @@
 
     function renderAnimatedLyrics(w, h, drawY, drawH, elapsed, bass) {
       const trackSec = getTrackTimeSec();
+      if (!hasStartedOnce && trackSec < WORD_TIMELINE[0].words[0][0]) {
+        return;
+      }
+
       const { phrase, tLoop } = getActivePhrase(trackSec);
       const isDream = Boolean(phrase.isDream);
       const mode = LYRIC_MODES[lyricModeIndex].id;
@@ -789,7 +903,6 @@
         anchorY = h - Math.max(isMobile ? 82 : 52, h * 0.09);
       }
 
-      // 1. Режим «Одно слово» — максимально крупное слово в центре нижней зоны
       if (mode === "soloCenter") {
         let curIdx = -1;
         for (let i = 0; i < phrase.words.length; i++) {
@@ -854,7 +967,6 @@
         return;
       }
 
-      // 2. Режимы «Слово за словом» и «Караоке» — крупный шрифт с автопереносом на несколько строк
       const subFontSize = isMobile
         ? Math.max(23, Math.round(w * (isDream ? 0.068 : 0.060)))
         : Math.max(22, Math.round(w * (isDream ? 0.035 : 0.028)));
@@ -956,6 +1068,10 @@
 
     function startPlayback() {
       isPlaying = true;
+      hasStartedOnce = true;
+      playBtn.textContent = "Пауза";
+      playBtn.classList.remove("start-btn");
+
       if (pausedAt > 0) {
         pausedTotal += performance.now() - pausedAt;
         pausedAt = 0;
@@ -969,27 +1085,44 @@
         audio.play().then(() => {
           statusEl.textContent = "Играет";
         }).catch(() => {
-          statusEl.textContent = "Нажми Play ещё раз для звука";
+          statusEl.textContent = "Нажми «Начать» ещё раз для звука";
         });
+      } else {
+        statusEl.textContent = "Играет";
       }
+    }
+
+    function pausePlayback() {
+      isPlaying = false;
+      pausedAt = performance.now();
+      playBtn.textContent = hasStartedOnce ? "Продолжить" : "Начать";
+      if (!hasStartedOnce) {
+        playBtn.classList.add("start-btn");
+      }
+      if (audio.src) audio.pause();
+      statusEl.textContent = "На паузе";
     }
 
     function togglePlay() {
       if (!isPlaying) {
         startPlayback();
       } else {
-        isPlaying = false;
-        pausedAt = performance.now();
-        if (audio.src) audio.pause();
-        statusEl.textContent = "Пауза";
+        pausePlayback();
       }
     }
 
     function restartAll() {
-      timerStart = performance.now();
+      const now = performance.now();
+      timerStart = now;
       pausedTotal = 0;
       pausedAt = 0;
+      animTime = 0;
       isPlaying = true;
+      hasStartedOnce = true;
+      initSakuraPetals();
+      playBtn.textContent = "Пауза";
+      playBtn.classList.remove("start-btn");
+
       initAudioAnalyser();
       if (audioCtx && audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
@@ -1011,7 +1144,7 @@
       lyricAnimBtn.textContent = `Текст: ${LYRIC_MODES[lyricModeIndex].label}`;
     });
 
-    document.getElementById("playBtn").addEventListener("click", togglePlay);
+    playBtn.addEventListener("click", togglePlay);
     document.getElementById("restartBtn").addEventListener("click", restartAll);
     document.getElementById("hideHudBtn").addEventListener("click", () => hud.classList.toggle("hidden"));
 
@@ -1038,8 +1171,10 @@
       const file = e.target.files && e.target.files[0];
       if (!file) return;
       audio.src = URL.createObjectURL(file);
-      restartAll();
-      statusEl.textContent = `Аудио: ${file.name}`;
+      audio.pause();
+      audio.currentTime = 0;
+      pausePlayback();
+      statusEl.textContent = `Аудио: ${file.name} (на паузе)`;
     });
 
     function loadAssets() {
@@ -1051,6 +1186,7 @@
       img.src = "rezephoto.jpg";
 
       audio.src = encodeURI("Eyedress & Dent May - Something About You.mp3");
+      audio.pause();
     }
 
     let lastFrame = performance.now();
@@ -1058,7 +1194,10 @@
     function render(now) {
       const dt = Math.min(0.05, (now - lastFrame) / 1000);
       lastFrame = now;
-      const elapsed = now / 1000;
+      if (isPlaying) {
+        animTime += dt;
+      }
+      const elapsed = animTime;
       const w = viewW;
       const h = viewH;
 
@@ -1074,8 +1213,8 @@
       let drawH = w;
 
       if (artReady) {
-        updateCloudsBuffer(dt, windMult);
         if (isPlaying) {
+          updateCloudsBuffer(dt, windMult);
           updateLivingFrame(elapsed, windMult, bass);
         }
 
@@ -1121,6 +1260,7 @@
         ctx.restore();
       }
 
+      updateAndRenderSakura(dt, windMult, elapsed);
       renderAnimatedLyrics(w, h, drawY, drawH, elapsed, bass);
 
       requestAnimationFrame(render);
