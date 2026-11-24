@@ -724,7 +724,6 @@
       }
     }
 
-    // Разбиваем видимые слова на строки, чтобы на телефоне текст не обрезался по краям
     function wrapWordsToLines(items, spaceW, maxLineW) {
       const lines = [];
       let currentLine = [];
@@ -762,15 +761,14 @@
       const exitAlpha = 1 - exitProgress * exitProgress;
       const exitRiseY = -exitProgress * 10;
 
-      // Позиция по вертикали: на телефоне размещаем сразу под квадратной картинкой (в нижней свободной зоне),
-      // а на широком экране — в нижней части изображения с безопасным отступом
+      // Размещаем текст заметно выше нижнего края экрана (ближе к нижней части картинки)
       const artBottom = drawY + drawH;
       const freeBelowArt = h - artBottom;
       let anchorY;
       if (isMobile && freeBelowArt > 64) {
-        anchorY = artBottom + Math.min(freeBelowArt * 0.42, 68);
+        anchorY = artBottom + Math.min(freeBelowArt * 0.28, 38);
       } else {
-        anchorY = h - Math.max(isMobile ? 56 : 42, h * 0.065);
+        anchorY = h - Math.max(isMobile ? 76 : 48, h * 0.085);
       }
 
       // 1. Режим «Одно слово»
@@ -799,7 +797,7 @@
         if (alpha <= 0.01) return;
 
         const fontSize = isMobile
-          ? Math.max(26, Math.round(w * (isDream ? 0.075 : 0.065)))
+          ? Math.max(25, Math.round(w * (isDream ? 0.072 : 0.062)))
           : Math.max(28, Math.round(w * (isDream ? 0.044 : 0.036)));
         const baseY = anchorY + exitRiseY + (1 - eased) * 14;
         const scale = getWordPopScale(wordAge, 1.26, 0.36) + bass * 0.03;
