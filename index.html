@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reze — Living Art</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; background: #0e0d12; color: #f6dce4;
+      font-family: Consolas, "DejaVu Sans Mono", monospace;
+      overflow: hidden; user-select: none;
+    }
+    #stage { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+    #hud {
+      position: fixed; top: 14px; left: 14px; z-index: 10;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      background: rgba(14, 13, 18, 0.78);
+      border: 1px solid rgba(255, 204, 184, 0.28);
+      border-radius: 10px; padding: 8px 12px;
+      backdrop-filter: blur(8px);
+      transition: opacity 0.25s ease;
+    }
+    #hud.hidden { opacity: 0; pointer-events: none; }
+    button, label.file-btn {
+      background: rgba(255, 204, 184, 0.14); color: #fff0e8;
+      border: 1px solid rgba(255, 204, 184, 0.34);
+      border-radius: 7px; padding: 6px 11px; font: inherit; font-size: 13px; cursor: pointer;
+    }
+    button:hover, label.file-btn:hover { background: rgba(255, 204, 184, 0.26); }
+    input[type="file"] { display: none; }
+    #status { font-size: 12px; color: #d8c4be; margin-left: 4px; }
+  </style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <div id="hud">
+    <button id="playBtn">Play / Pause</button>
+    <button id="restartBtn">Restart</button>
+    <button id="windBtn">Ветер: 1.0x</button>
+    <button id="lyricAnimBtn">Текст: Слово за словом</button>
+    <label class="file-btn">
+      Фото
+      <input id="photoInput" type="file" accept="image/*" />
+    </label>
+    <label class="file-btn">
+      Аудио
+      <input id="audioInput" type="file" accept="audio/*" />
+    </label>
+    <button id="hideHudBtn">Скрыть (H)</button>
+    <span id="status">Загрузка...</span>
+  </div>
+
+  <audio id="bgm" preload="auto" loop crossorigin="anonymous"></audio>
+
+  <script>
+    const DREAM_LINE = "SHE LOOKS JUST LIKE A DREAM";
+
+    const WORD_TIMELINE = [
+      {
+        start: 0.36, end: 4.03,
+        words: [
+          [0.36, "IN"], [0.62, "THE"], [0.90, "CAR,"],
+          [1.68, "CRUISING"], [2.22, "AROUND"], [2.72, "WITH"], [3.08, "YOU"]
+        ]
+      },
+      {
+        start: 4.03, end: 7.61,
+        words: [
+          [4.03, "AND"], [4.30, "MY"], [4.58, "BABY,"],
+          [5.32, "YOU"], [5.60, "KNOW"], [5.88, "THAT"], [6.15, "I"], [6.42, "GOT"], [6.78, "YOU"]
+        ]
+      },
+      {
+        start: 7.61, end: 10.85,
+        words: [
+          [7.61, "HIT"], [7.88, "THE"], [8.16, "ROAD,"],
+          [8.85, "I'M"], [9.16, "TAKING"], [9.56, "OFF"], [9.90, "WITH"], [10.24, "YOU"]
+        ]
+      },
+      {
+        start: 10.85, end: 15.34,
+        words: [
+          [10.85, "NOT"], [11.12, "IN"], [11.34, "A"], [11.60, "HURRY,"],
+          [12.38, "THERE'S"], [12.74, "SOMETHING"], [13.20, "ABOUT"], [13.66, "YOU,"], [14.12, "OH"]
+        ]
+      },
+      {
+        start: 15.34, end: 22.68,
+        words: [
+          [15.34, "LEAVE"], [15.65, "THE"], [15.96, "CAR"], [16.32, "AT"], [16.58, "THE"], [16.88, "VALET"],
+          [18.45, "(CASH"], [19.05, "ONLY)"]
+        ]
+      },
+      {
+        start: 22.68, end: 29.55,
+        words: [
+          [22.68, "CHECK"], [23.00, "ME"], [23.32, "IN,"],
+          [23.75, "POP"], [24.05, "THE"], [24.36, "CHAMPAGNE"],
+          [25.85, "(DOM"], [26.35, "PERIGNON)"]
+        ]
+      },
+      {
+        start: 29.55, end: 36.79,
+        words: [
+          [29.55, "POUR"], [29.88, "ME"], [30.15, "A"], [30.45, "GLASS,"],
+          [31.05, "SHE'S"], [31.38, "GOT"], [31.72, "GOOD"], [32.08, "TASTE"],
+          [33.35, "(SO"], [33.80, "GOOD)"]
+        ]
+      },
+      {
+        start: 36.79, end: 44.52,
+        words: [
+          [36.79, "TAKE"], [37.10, "OFF"], [37.40, "OUR"], [37.72, "CLOTHES"],
+          [38.20, "BY"], [38.48, "THE"], [38.78, "FIREPLACE"],
+          [40.35, "(SEXY,"], [40.95, "YEAH)"]
+        ]
+      },
+      {
+        start: 44.52, end: 48.38, isDream: true,
+        words: [
+          [44.52, "SHE"], [44.96, "LOOKS"], [45.42, "JUST"], [45.86, "LIKE"], [46.24, "A"], [46.62, "DREAM"]
+        ]
+      },
+      {
+        start: 48.38, end: 52.33,
+        words: [
+          [48.38, "THE"], [48.72, "PRETTIEST"], [49.35, "GIRL"], [49.82, "I'VE"], [50.20, "EVER"], [50.65, "SEEN"]
+        ]
+      },
+      {
+        start: 52.33, end: 58.08,
+        words: [
+          [52.33, "FROM"], [52.68, "THE"], [53.05, "COVER"], [53.55, "OF"], [53.82, "A"], [54.15, "MAGAZINE"]
+        ]
+      },
+      {
+        start: 58.08, end: 61.35,
+        words: [
+          [58.08, "IN"], [58.34, "THE"], [58.62, "CAR,"],
+          [59.35, "CRUISING"], [59.88, "AROUND"], [60.35, "WITH"], [60.70, "YOU"]
+        ]
+      },
+      {
+        start: 61.35, end: 65.13,
+        words: [
+          [61.35, "AND"], [61.62, "MY"], [61.90, "BABY,"],
+          [62.65, "YOU"], [62.94, "KNOW"], [63.22, "THAT"], [63.48, "I"], [63.76, "GOT"], [64.12, "YOU"]
+        ]
+      },
+      {
+        start: 65.13, end: 68.57,
+        words: [
+          [65.13, "HIT"], [65.40, "THE"], [65.68, "ROAD,"],
+          [66.38, "I'M"], [66.70, "TAKING"], [67.10, "OFF"], [67.44, "WITH"], [67.78, "YOU"]
+        ]
+      },
+      {
+        start: 68.57, end: 73.07,
+        words: [
+          [68.57, "NOT"], [68.84, "IN"], [69.06, "A"], [69.32, "HURRY,"],
+          [70.10, "THERE'S"], [70.46, "SOMETHING"], [70.92, "ABOUT"], [71.38, "YOU,"], [71.85, "OH"]
+        ]
+      },
+      {
+        start: 73.07, end: 80.05,
+        words: [
+          [73.07, "WE"], [73.42, "STAYED"], [73.82, "UP"], [74.18, "ALL"], [74.56, "NIGHT"],
+          [75.05, "AND"], [75.38, "SLEPT"], [75.80, "'TIL"], [76.20, "NOON"]
+        ]
+      },
+      {
+        start: 80.05, end: 87.46,
+        words: [
+          [80.05, "IT'S"], [80.38, "SO"], [80.75, "NICE"], [81.20, "TO"],
+          [81.52, "WAKE"], [81.90, "UP"], [82.28, "NEXT"], [82.65, "TO"], [83.02, "YOU"]
+        ]
+      },
+      {
+        start: 87.46, end: 94.36,
+        words: [
+          [87.46, "LET'S"], [87.80, "START"], [88.15, "THE"], [88.48, "DAY"],
+          [88.92, "WITH"], [89.26, "BREAKFAST"], [89.85, "IN"], [90.20, "BED"]
+        ]
+      },
+      {
+        start: 94.36, end: 101.45,
+        words: [
+          [94.36, "THINK"], [94.72, "I'M"], [95.05, "GONNA"], [95.48, "LOVE"], [95.88, "YOU"],
+          [96.25, "'TIL"], [96.58, "I'M"], [96.95, "DEAD"]
+        ]
+      },
+      {
+        start: 101.45, end: 105.76,
+        words: [
+          [101.45, "I"], [101.82, "CAN'T"], [102.25, "WAIT"], [102.72, "TO"],
+          [103.08, "BUY"], [103.48, "YOU"], [103.90, "THINGS"]
+        ]
+      },
+      {
+        start: 105.76, end: 108.62,
+        words: [
+          [105.76, "A"], [106.06, "BRAND"], [106.48, "NEW"], [106.92, "DIAMOND"], [107.48, "RING"]
+        ]
+      },
+      {
+        start: 108.62, end: 115.39,
+        words: [
+          [108.62, "THIS"], [109.02, "IS"], [109.42, "MORE"], [109.88, "THAN"],
+          [110.28, "JUST"], [110.68, "A"], [111.05, "FLING"]
+        ]
+      },
+      {
+        start: 115.39, end: 118.93,
+        words: [
+          [115.39, "IN"], [115.66, "THE"], [115.94, "CAR,"],
+          [116.70, "CRUISING"], [117.24, "AROUND"], [117.72, "WITH"], [118.08, "YOU"]
+        ]
+      },
+      {
+        start: 118.93, end: 122.65,
+        words: [
+          [118.93, "AND"], [119.20, "MY"], [119.48, "BABY,"],
+          [120.22, "YOU"], [120.50, "KNOW"], [120.78, "THAT"], [121.05, "I"], [121.32, "GOT"], [121.68, "YOU"]
+        ]
+      },
+      {
+        start: 122.65, end: 126.14,
+        words: [
+          [122.65, "HIT"], [122.92, "THE"], [123.20, "ROAD,"],
+          [123.90, "I'M"], [124.22, "TAKING"], [124.62, "OFF"], [124.96, "WITH"], [125.30, "YOU"]
+        ]
+      },
+      {
+        start: 126.14, end: 130.88,
+        words: [
+          [126.14, "NOT"], [126.41, "IN"], [126.63, "A"], [126.89, "HURRY,"],
+          [127.67, "THERE'S"], [128.03, "SOMETHING"], [128.49, "ABOUT"], [128.95, "YOU,"], [129.42, "OH"]
+        ]
+      },
+      {
+        start: 130.88, end: 134.43,
+        words: [
+          [130.88, "THERE'S"], [131.26, "SOMETHING"], [131.76, "ABOUT"], [132.24, "YOU,"], [132.72, "GIRL"]
+        ]
+      },
+      {
+        start: 134.43, end: 138.32,
+        words: [
+          [134.43, "THERE'S"], [134.82, "SOMETHING"], [135.32, "ABOUT"], [135.80, "YOU,"], [136.28, "OH"]
+        ]
+      },
+      {
+        start: 138.32, end: 141.74,
+        words: [
+          [138.32, "SOMETHING"], [138.90, "ABOUT"], [139.48, "YOU"]
+        ]
+      },
+      {
+        start: 141.74, end: 148.0,
+        words: [
+          [141.74, "SOMETHING"], [142.45, "ABOUT..."]
+        ]
+      }
+    ];
+
+    const canvas = document.getElementById("stage");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const audio = document.getElementById("bgm");
+    const statusEl = document.getElementById("status");
+    const hud = document.getElementById("hud");
+    const windBtn = document.getElementById("windBtn");
+    const lyricAnimBtn = document.getElementById("lyricAnimBtn");
+
+    const simCanvas = document.createElement("canvas");
+    const sctx = simCanvas.getContext("2d");
+
+    const cloudCanvas = document.createElement("canvas");
+    const cctx = cloudCanvas.getContext("2d");
+
+    const bgCanvas = document.createElement("canvas");
+    const bgctx = bgCanvas.getContext("2d");
+
+    const WIND_MODES = [
+      { label: "1.0x", mult: 1.0 },
+      { label: "1.6x", mult: 1.6 },
+      { label: "0.55x", mult: 0.55 }
+    ];
+    let windIndex = 0;
+
+    const LYRIC_MODES = [
+      { id: "wordByWord", label: "Слово за словом" },
+      { id: "soloCenter", label: "Одно слово" },
+      { id: "karaoke", label: "Караоке" }
+    ];
+    let lyricModeIndex = 0;
+
+    let simW = 640;
+    let simH = 640;
+    let srcPixels = null;
+    let skyMask = null;
+    let cloudPixels = null;
+    let dstImageData = null;
+    let dstPixels = null;
+    let artReady = false;
+
+    let clouds = [];
+    let dustMotes = [];
+
+    let timerStart = performance.now();
+    let pausedAt = 0;
+    let pausedTotal = 0;
+    let isPlaying = true;
+
+    let audioCtx = null;
+    let analyser = null;
+    let freqData = null;
+
+    function initAudioAnalyser() {
+      if (audioCtx) return;
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        audioCtx = new AudioContextClass();
+        const srcNode = audioCtx.createMediaElementSource(audio);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 128;
+        freqData = new Uint8Array(analyser.frequencyBinCount);
+        srcNode.connect(analyser);
+        analyser.connect(audioCtx.destination);
+      } catch (e) {
+        analyser = null;
+      }
+    }
+
+    function getBassEnergy(elapsed) {
+      if (analyser && freqData && !audio.paused) {
+        analyser.getByteFrequencyData(freqData);
+        let sum = 0;
+        for (let i = 0; i < 6; i++) sum += freqData[i];
+        return Math.min(1, (sum / (6 * 255)) * 1.25);
+      }
+      const beatPhase = (elapsed * (106 / 60)) % 1;
+      return Math.exp(-beatPhase * 4.8) * 0.35;
+    }
+
+    function makeAnimeCloudSprite(w, h, isLowerSunset) {
+      const off = document.createElement("canvas");
+      off.width = w;
+      off.height = h;
+      const octx = off.getContext("2d");
+
+      const puffs = [
+        { x: 0.50, y: 0.54, rx: 0.42, ry: 0.26, a: 0.42 },
+        { x: 0.28, y: 0.58, rx: 0.28, ry: 0.20, a: 0.36 },
+        { x: 0.72, y: 0.58, rx: 0.30, ry: 0.20, a: 0.36 },
+        { x: 0.40, y: 0.42, rx: 0.26, ry: 0.22, a: 0.38 },
+        { x: 0.60, y: 0.44, rx: 0.24, ry: 0.20, a: 0.36 }
+      ];
+
+      for (const p of puffs) {
+        const cx = p.x * w;
+        const cy = p.y * h;
+        const rad = Math.max(p.rx * w, p.ry * h);
+
+        octx.save();
+        octx.translate(cx, cy);
+        octx.scale((p.rx * w) / rad, (p.ry * h) / rad);
+
+        const grad = octx.createRadialGradient(0, -rad * 0.15, rad * 0.05, 0, 0, rad);
+        if (isLowerSunset) {
+          grad.addColorStop(0, `rgba(248, 224, 198, ${p.a})`);
+          grad.addColorStop(0.55, `rgba(232, 194, 168, ${p.a * 0.6})`);
+          grad.addColorStop(1, "rgba(232, 194, 168, 0)");
+        } else {
+          grad.addColorStop(0, `rgba(218, 210, 224, ${p.a})`);
+          grad.addColorStop(0.55, `rgba(182, 174, 192, ${p.a * 0.55})`);
+          grad.addColorStop(1, "rgba(182, 174, 192, 0)");
+        }
+
+        octx.fillStyle = grad;
+        octx.beginPath();
+        octx.arc(0, 0, rad, 0, Math.PI * 2);
+        octx.fill();
+        octx.restore();
+      }
+      return off;
+    }
+
+    function initCloudsAndParticles() {
+      cloudCanvas.width = simW;
+      cloudCanvas.height = simH;
+
+      clouds = [
+        { x: simW * 0.12, y: simH * 0.14, speed: 6.5, sprite: makeAnimeCloudSprite(240, 82, false) },
+        { x: simW * 0.78, y: simH * 0.17, speed: 8.0, sprite: makeAnimeCloudSprite(270, 90, false) },
+        { x: simW * 0.44, y: simH * 0.09, speed: 5.5, sprite: makeAnimeCloudSprite(290, 78, false) },
+        { x: simW * 0.16, y: simH * 0.34, speed: 10.5, sprite: makeAnimeCloudSprite(250, 76, true) },
+        { x: simW * 0.82, y: simH * 0.38, speed: 11.5, sprite: makeAnimeCloudSprite(280, 84, true) },
+        { x: simW * 0.10, y: simH * 0.54, speed: 13.5, sprite: makeAnimeCloudSprite(300, 74, true) },
+        { x: simW * 0.86, y: simH * 0.52, speed: 12.5, sprite: makeAnimeCloudSprite(290, 78, true) }
+      ];
+
+      dustMotes = [];
+      for (let i = 0; i < 36; i++) {
+        dustMotes.push({
+          x: Math.random() * simW,
+          y: Math.random() * simH * 0.78,
+          vx: 4 + Math.random() * 9,
+          vy: -(1.5 + Math.random() * 4),
+          r: 0.7 + Math.random() * 1.2,
+          phase: Math.random() * Math.PI * 2,
+          alpha: 0.25 + Math.random() * 0.45
+        });
+      }
+    }
+
+    function buildSkyMask(data, w, h) {
+      const rowSkyR = new Float32Array(h);
+      const rowSkyG = new Float32Array(h);
+      const rowSkyB = new Float32Array(h);
+
+      let lastR = data[0], lastG = data[1], lastB = data[2];
+      for (let y = 0; y < h; y++) {
+        const samples = [];
+        for (const sx of [2, 6, w - 3, w - 7]) {
+          const i = (y * w + sx) * 4;
+          const r = data[i], g = data[i + 1], b = data[i + 2];
+          const lum = (r + g + b) / 3;
+          if (lum > 95 && y < h * 0.72) {
+            samples.push([r, g, b]);
+          }
+        }
+        if (samples.length > 0) {
+          let sr = 0, sg = 0, sb = 0;
+          for (const [r, g, b] of samples) { sr += r; sg += g; sb += b; }
+          lastR = sr / samples.length;
+          lastG = sg / samples.length;
+          lastB = sb / samples.length;
+        }
+        rowSkyR[y] = lastR;
+        rowSkyG[y] = lastG;
+        rowSkyB[y] = lastB;
+      }
+
+      const mask = new Float32Array(w * h);
+      for (let y = 0; y < h; y++) {
+        if (y > h * 0.74) continue;
+        const tr = rowSkyR[y];
+        const tg = rowSkyG[y];
+        const tb = rowSkyB[y];
+
+        for (let x = 0; x < w; x++) {
+          const idx = (y * w + x) * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          const lum = (r + g + b) / 3;
+
+          if (lum < 92) continue;
+
+          const dr = r - tr;
+          const dg = g - tg;
+          const db = b - tb;
+          const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+
+          if (dist < 28) {
+            mask[y * w + x] = dist < 16 ? 1.0 : 1.0 - (dist - 16) / 12;
+          }
+        }
+      }
+
+      return mask;
+    }
+
+    function prepareImage(img) {
+      const aspect = img.width / Math.max(img.height, 1);
+      simH = 640;
+      simW = Math.max(360, Math.round(simH * aspect));
+
+      simCanvas.width = simW;
+      simCanvas.height = simH;
+
+      sctx.imageSmoothingEnabled = true;
+      sctx.imageSmoothingQuality = "high";
+      sctx.drawImage(img, 0, 0, simW, simH);
+
+      try {
+        const raw = sctx.getImageData(0, 0, simW, simH);
+        srcPixels = new Uint8ClampedArray(raw.data);
+        skyMask = buildSkyMask(srcPixels, simW, simH);
+        dstImageData = sctx.createImageData(simW, simH);
+        dstPixels = dstImageData.data;
+        artReady = true;
+      } catch (e) {
+        artReady = false;
+        statusEl.textContent = "Нужен http://127.0.0.1:8080 (file:// блокирует пиксели)";
+        return;
+      }
+
+      bgCanvas.width = 160;
+      bgCanvas.height = 160;
+      bgctx.filter = "blur(18px) brightness(0.75)";
+      bgctx.drawImage(img, -16, -16, 192, 192);
+
+      initCloudsAndParticles();
+      statusEl.textContent = "Готово";
+    }
+
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function updateCloudsBuffer(dt, windMult) {
+      cctx.clearRect(0, 0, simW, simH);
+      for (const cl of clouds) {
+        if (isPlaying) {
+          cl.x += cl.speed * windMult * dt;
+          if (cl.x - cl.sprite.width * 0.5 > simW + 20) {
+            cl.x = -cl.sprite.width * 0.5 - 20;
+          }
+        }
+        cctx.drawImage(
+          cl.sprite,
+          cl.x - cl.sprite.width * 0.5,
+          cl.y - cl.sprite.height * 0.5
+        );
+      }
+      cloudPixels = cctx.getImageData(0, 0, simW, simH).data;
+    }
+
+    function updateLivingFrame(elapsed, windMult, bass) {
+      if (!artReady || !srcPixels || !dstPixels) return;
+
+      const w = simW;
+      const h = simH;
+      const t = elapsed * windMult;
+      const breathe = Math.sin(elapsed * 1.3);
+
+      for (let y = 0; y < h; y++) {
+        const ny = y / h;
+        const rowOffset = y * w * 4;
+
+        const vRightHair = ny > 0.15 && ny < 0.76
+          ? Math.sin(((ny - 0.15) / 0.61) * Math.PI)
+          : 0;
+        const vTailTips = ny > 0.48 && ny < 0.76
+          ? Math.sin(((ny - 0.48) / 0.28) * Math.PI)
+          : 0;
+        const vChinWisps = ny > 0.42 && ny < 0.62
+          ? Math.sin(((ny - 0.42) / 0.20) * Math.PI)
+          : 0;
+        const vShoulders = ny > 0.68 ? (ny - 0.68) / 0.32 : 0;
+
+        const waveMain = Math.sin(ny * 8.0 - t * 2.6);
+        const waveFast = Math.cos(ny * 15.0 - t * 4.0 + 0.8) * 0.38;
+
+        for (let x = 0; x < w; x++) {
+          const nx = x / w;
+
+          const faceDx = (nx - 0.445) / 0.135;
+          const faceDy = (ny - 0.385) / 0.185;
+          const faceDist2 = faceDx * faceDx + faceDy * faceDy;
+          const faceLock = faceDist2 < 1.0 ? 0.0 : Math.min(1.0, (faceDist2 - 1.0) / 0.85);
+
+          const handDx = (nx - 0.475) / 0.125;
+          const handDy = (ny - 0.78) / 0.21;
+          const handDist2 = handDx * handDx + handDy * handDy;
+          const handLock = handDist2 < 1.0 ? 0.05 : Math.min(1.0, 0.05 + (handDist2 - 1.0) / 0.75);
+
+          const lock = faceLock * handLock;
+
+          const hRight = nx > 0.56 ? Math.min(1.0, (nx - 0.56) / 0.32) : 0;
+          const hLeft = nx < 0.32 ? Math.min(1.0, (0.32 - nx) / 0.20) : 0;
+
+          const hairWeight = (hRight * vRightHair * 1.05 + hLeft * vRightHair * 0.35 + vTailTips * hRight * 0.55) * lock;
+          const wispWeight = (nx > 0.27 && nx < 0.65 ? vChinWisps * 0.32 : 0) * lock;
+          const totalHair = hairWeight + wispWeight;
+
+          const localWave =
+            Math.sin(nx * 8.5 - t * 2.8 + ny * 4.0) * 0.60 +
+            waveMain * 0.26 +
+            waveFast * 0.16;
+
+          const windBoost = windMult * (0.9 + bass * 0.35);
+          const dispX = -localWave * (w * 0.011) * totalHair * windBoost;
+          const dispY =
+            -Math.cos(nx * 7.0 - t * 2.3 + ny * 3.0) * (h * 0.0065) * totalHair * windBoost -
+            breathe * (h * 0.0024) * vShoulders;
+
+          let sx = x + dispX;
+          let sy = y + dispY;
+          if (sx < 0) sx = 0;
+          else if (sx > w - 1.001) sx = w - 1.001;
+          if (sy < 0) sy = 0;
+          else if (sy > h - 1.001) sy = h - 1.001;
+
+          const x0 = sx | 0;
+          const y0 = sy | 0;
+          const fx = sx - x0;
+          const fy = sy - y0;
+          const invFx = 1.0 - fx;
+          const invFy = 1.0 - fy;
+
+          const w00 = invFx * invFy;
+          const w10 = fx * invFy;
+          const w01 = invFx * fy;
+          const w11 = fx * fy;
+
+          const i00 = (y0 * w + x0) * 4;
+          const i10 = i00 + 4;
+          const i01 = i00 + w * 4;
+          const i11 = i01 + 4;
+
+          let rCol = srcPixels[i00] * w00 + srcPixels[i10] * w10 + srcPixels[i01] * w01 + srcPixels[i11] * w11;
+          let gCol = srcPixels[i00 + 1] * w00 + srcPixels[i10 + 1] * w10 + srcPixels[i01 + 1] * w01 + srcPixels[i11 + 1] * w11;
+          let bCol = srcPixels[i00 + 2] * w00 + srcPixels[i10 + 2] * w10 + srcPixels[i01 + 2] * w01 + srcPixels[i11 + 2] * w11;
+
+          if (cloudPixels && skyMask) {
+            const sMask = skyMask[y0 * w + x0];
+            if (sMask > 0.01) {
+              const cIdx = rowOffset + x * 4;
+              const cAlpha = (cloudPixels[cIdx + 3] / 255) * sMask * 0.85;
+              if (cAlpha > 0.002) {
+                const invC = 1.0 - cAlpha;
+                rCol = rCol * invC + cloudPixels[cIdx] * cAlpha;
+                gCol = gCol * invC + cloudPixels[cIdx + 1] * cAlpha;
+                bCol = bCol * invC + cloudPixels[cIdx + 2] * cAlpha;
+              }
+            }
+          }
+
+          const dstIdx = rowOffset + x * 4;
+          dstPixels[dstIdx] = rCol;
+          dstPixels[dstIdx + 1] = gCol;
+          dstPixels[dstIdx + 2] = bCol;
+          dstPixels[dstIdx + 3] = 255;
+        }
+      }
+
+      sctx.putImageData(dstImageData, 0, 0);
+    }
+
+    function getTrackTimeSec() {
+      if (audio.src && !audio.paused && !Number.isNaN(audio.currentTime)) {
+        return audio.currentTime;
+      }
+      const now = isPlaying ? performance.now() : (pausedAt || performance.now());
+      return Math.max(0, (now - timerStart - pausedTotal) / 1000);
+    }
+
+    function getActivePhrase(tSec) {
+      const cycleLen = 148.0;
+      const tLoop = Math.max(0, tSec) % cycleLen;
+
+      let active = WORD_TIMELINE[0];
+      for (let i = 0; i < WORD_TIMELINE.length; i++) {
+        if (tLoop >= WORD_TIMELINE[i].start) {
+          active = WORD_TIMELINE[i];
+        } else {
+          break;
+        }
+      }
+      return { phrase: active, tLoop };
+    }
+
+    function easeOutCubic(t) {
+      return 1 - Math.pow(1 - t, 3);
+    }
+
+    // Импульс масштаба: слово быстро вырастает до peakScale при выходе и плавно возвращается в 1.0
+    function getWordPopScale(age, peakScale = 1.24, totalDur = 0.36) {
+      if (age <= 0) return 0.82;
+      if (age >= totalDur) return 1.0;
+      const peakTime = totalDur * 0.34;
+      if (age < peakTime) {
+        const t = age / peakTime;
+        const ease = 1 - Math.pow(1 - t, 2);
+        return 0.82 + (peakScale - 0.82) * ease;
+      } else {
+        const t = (age - peakTime) / (totalDur - peakTime);
+        const ease = 1 - Math.pow(1 - t, 3);
+        return peakScale - (peakScale - 1.0) * ease;
+      }
+    }
+
+    function renderAnimatedLyrics(w, h, elapsed, bass) {
+      const trackSec = getTrackTimeSec();
+      const { phrase, tLoop } = getActivePhrase(trackSec);
+      const isDream = Boolean(phrase.isDream);
+      const mode = LYRIC_MODES[lyricModeIndex].id;
+
+      const timeLeft = Math.max(0, phrase.end - tLoop);
+      const exitWindow = 0.30;
+      const exitProgress = timeLeft < exitWindow ? Math.max(0, 1 - timeLeft / exitWindow) : 0;
+      const exitAlpha = 1 - exitProgress * exitProgress;
+      const exitRiseY = -exitProgress * 10;
+
+      // 1. Режим «Одно слово»: крупно по центру с импульсом увеличения при выходе
+      if (mode === "soloCenter") {
+        let curIdx = -1;
+        for (let i = 0; i < phrase.words.length; i++) {
+          if (tLoop >= phrase.words[i][0]) {
+            curIdx = i;
+          } else {
+            break;
+          }
+        }
+        if (curIdx < 0) return;
+
+        const [wordStart, wordText] = phrase.words[curIdx];
+        const nextWordStart =
+          curIdx + 1 < phrase.words.length ? phrase.words[curIdx + 1][0] : phrase.end;
+        const wordAge = Math.max(0, tLoop - wordStart);
+        const wordTimeLeft = Math.max(0, nextWordStart - tLoop);
+
+        const enterDur = 0.22;
+        const p = Math.min(1, wordAge / enterDur);
+        const eased = easeOutCubic(p);
+        const wordFadeOut = wordTimeLeft < 0.12 ? Math.max(0, wordTimeLeft / 0.12) : 1;
+        const alpha = Math.min(1, p * 2.0) * wordFadeOut * exitAlpha;
+        if (alpha <= 0.01) return;
+
+        const fontSize = Math.max(28, Math.round(w * (isDream ? 0.044 : 0.036)));
+        const baseY = h - Math.max(46, h * 0.072) + exitRiseY + (1 - eased) * 14;
+        const scale = getWordPopScale(wordAge, 1.26, 0.36) + bass * 0.03;
+        const flash = Math.max(0, 1 - wordAge / 0.34);
+
+        ctx.save();
+        ctx.translate(w / 2, baseY);
+        ctx.scale(scale, scale);
+        ctx.globalAlpha = alpha;
+        ctx.font = `bold ${fontSize}px Consolas, "DejaVu Sans Mono", monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        ctx.shadowColor = isDream
+          ? "rgba(255, 196, 224, 0.85)"
+          : `rgba(255, 214, 192, ${(0.35 + flash * 0.65).toFixed(2)})`;
+        ctx.shadowBlur = isDream ? 20 : 12 + flash * 10;
+
+        ctx.fillStyle = flash > 0.2 ? "#ffffff" : (isDream ? "#ffe4ee" : "#ffe6d4");
+        ctx.fillText(wordText, 0, 0);
+        ctx.restore();
+        return;
+      }
+
+      // 2. Режимы «Слово за словом» и «Караоке»
+      const subFontSize = Math.max(20, Math.round(w * (isDream ? 0.031 : 0.024)));
+      ctx.font = `bold ${subFontSize}px Consolas, "DejaVu Sans Mono", monospace`;
+      ctx.textBaseline = "middle";
+
+      const spaceW = ctx.measureText(" ").width * (isDream ? 1.32 : 1.18);
+      const wordItems = phrase.words.map(([wStart, wText], idx) => {
+        const wAge = tLoop - wStart;
+        const width = ctx.measureText(wText).width;
+        const appearWeight =
+          mode === "wordByWord"
+            ? (wAge >= 0 ? easeOutCubic(Math.min(1, wAge / 0.16)) : 0)
+            : 1;
+        return { wStart, wText, idx, wAge, width, appearWeight };
+      });
+
+      let visibleTotalWidth = 0;
+      let startedCount = 0;
+      for (const item of wordItems) {
+        if (item.appearWeight > 0) {
+          if (startedCount > 0) visibleTotalWidth += spaceW * item.appearWeight;
+          visibleTotalWidth += item.width * item.appearWeight;
+          startedCount++;
+        }
+      }
+
+      if (startedCount === 0) return;
+
+      const baseY = h - Math.max(38, h * 0.06) + exitRiseY;
+      let cursorX = (w - visibleTotalWidth) / 2;
+
+      for (const item of wordItems) {
+        if (mode === "wordByWord" && item.wAge < 0) continue;
+
+        const effectiveW = item.width * item.appearWeight;
+        const wordCenterX = cursorX + effectiveW / 2;
+        cursorX += effectiveW + spaceW * item.appearWeight;
+
+        const isSung = item.wAge >= 0;
+        const enterDur = 0.24;
+        const p = isSung ? Math.min(1, item.wAge / enterDur) : 0;
+        const eased = isSung ? easeOutCubic(p) : 0;
+        const flash = isSung ? Math.max(0, 1 - item.wAge / 0.38) : 0;
+
+        let alpha = exitAlpha;
+        let offsetY = 0;
+        let scale = 1;
+        let rot = 0;
+
+        if (mode === "wordByWord") {
+          alpha *= Math.min(1, p * 2.0);
+          offsetY = (1 - eased) * 14 + Math.sin(elapsed * 2.6 + item.idx * 0.7) * (1.4 + bass * 1.6);
+          scale = getWordPopScale(item.wAge, 1.24, 0.36);
+          rot = (1 - eased) * (item.idx % 2 === 0 ? -0.035 : 0.035);
+        } else {
+          alpha *= isSung ? 1.0 : 0.26;
+          offsetY = isSung ? (1 - eased) * 8 - flash * 3 : 0;
+          scale = isSung ? getWordPopScale(item.wAge, 1.22, 0.34) : 0.96;
+        }
+
+        if (alpha <= 0.01) continue;
+
+        ctx.save();
+        ctx.translate(wordCenterX, baseY + offsetY);
+        ctx.rotate(rot);
+        ctx.scale(scale, scale);
+        ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+        ctx.textAlign = "center";
+
+        if (isSung && (isDream || flash > 0.05)) {
+          ctx.shadowColor = isDream
+            ? `rgba(255, 200, 224, ${(0.55 + flash * 0.45).toFixed(2)})`
+            : `rgba(255, 214, 192, ${(flash * 0.9).toFixed(2)})`;
+          ctx.shadowBlur = isDream ? 16 + bass * 8 : 14 * flash;
+        } else {
+          ctx.shadowColor = "rgba(0, 0, 0, 0.92)";
+          ctx.shadowBlur = 8;
+        }
+
+        if (!isSung) {
+          ctx.fillStyle = "#cbb8b4";
+        } else if (isDream) {
+          ctx.fillStyle = flash > 0.18 ? "#ffffff" : "#ffe4ee";
+        } else if (flash > 0.15) {
+          ctx.fillStyle = "#ffffff";
+        } else {
+          ctx.fillStyle = item.idx % 2 === 0 ? "#f7d9bd" : "#ffdce4";
+        }
+
+        ctx.fillText(item.wText, 0, 0);
+        ctx.restore();
+      }
+    }
+
+    function startPlayback() {
+      isPlaying = true;
+      if (pausedAt > 0) {
+        pausedTotal += performance.now() - pausedAt;
+        pausedAt = 0;
+      }
+      initAudioAnalyser();
+      if (audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume().catch(() => {});
+      }
+      if (audio.src) {
+        audio.volume = 1.0;
+        audio.play().then(() => {
+          statusEl.textContent = "Играет";
+        }).catch(() => {
+          statusEl.textContent = "Нажми Play ещё раз для звука";
+        });
+      }
+    }
+
+    function togglePlay() {
+      if (!isPlaying) {
+        startPlayback();
+      } else {
+        isPlaying = false;
+        pausedAt = performance.now();
+        if (audio.src) audio.pause();
+        statusEl.textContent = "Пауза";
+      }
+    }
+
+    function restartAll() {
+      timerStart = performance.now();
+      pausedTotal = 0;
+      pausedAt = 0;
+      isPlaying = true;
+      initAudioAnalyser();
+      if (audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume().catch(() => {});
+      }
+      if (audio.src) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+      statusEl.textContent = "Перезапуск";
+    }
+
+    windBtn.addEventListener("click", () => {
+      windIndex = (windIndex + 1) % WIND_MODES.length;
+      windBtn.textContent = `Ветер: ${WIND_MODES[windIndex].label}`;
+    });
+
+    lyricAnimBtn.addEventListener("click", () => {
+      lyricModeIndex = (lyricModeIndex + 1) % LYRIC_MODES.length;
+      lyricAnimBtn.textContent = `Текст: ${LYRIC_MODES[lyricModeIndex].label}`;
+    });
+
+    document.getElementById("playBtn").addEventListener("click", togglePlay);
+    document.getElementById("restartBtn").addEventListener("click", restartAll);
+    document.getElementById("hideHudBtn").addEventListener("click", () => hud.classList.toggle("hidden"));
+
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key === "h" || e.key === "H" || e.key === "р" || e.key === "Р") {
+        hud.classList.toggle("hidden");
+      } else if (e.key === "r" || e.key === "R" || e.key === "к" || e.key === "К") {
+        restartAll();
+      }
+    });
+
+    document.getElementById("photoInput").addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const img = new Image();
+      img.onload = () => prepareImage(img);
+      img.src = URL.createObjectURL(file);
+    });
+
+    document.getElementById("audioInput").addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      audio.src = URL.createObjectURL(file);
+      restartAll();
+      statusEl.textContent = `Аудио: ${file.name}`;
+    });
+
+    function loadAssets() {
+      const img = new Image();
+      img.onload = () => prepareImage(img);
+      img.onerror = () => {
+        statusEl.textContent = "rezephoto.jpg не найден — выбери фото кнопкой";
+      };
+      img.src = "rezephoto.jpg";
+
+      audio.src = encodeURI("Eyedress & Dent May - Something About You.mp3");
+    }
+
+    let lastFrame = performance.now();
+
+    function render(now) {
+      const dt = Math.min(0.05, (now - lastFrame) / 1000);
+      lastFrame = now;
+      const elapsed = now / 1000;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      const windMult = WIND_MODES[windIndex].mult;
+      const bass = getBassEnergy(elapsed);
+
+      ctx.fillStyle = "#0e0d12";
+      ctx.fillRect(0, 0, w, h);
+
+      if (artReady) {
+        updateCloudsBuffer(dt, windMult);
+        if (isPlaying) {
+          updateLivingFrame(elapsed, windMult, bass);
+        }
+
+        ctx.save();
+        ctx.globalAlpha = 0.72;
+        ctx.drawImage(bgCanvas, 0, 0, w, h);
+        ctx.restore();
+
+        const artAspect = simW / simH;
+        let drawH = h;
+        let drawW = drawH * artAspect;
+        if (drawW > w) {
+          drawW = w;
+          drawH = drawW / artAspect;
+        }
+        const drawX = (w - drawW) / 2;
+        const drawY = (h - drawH) / 2;
+
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(simCanvas, drawX, drawY, drawW, drawH);
+
+        const scaleX = drawW / simW;
+        const scaleY = drawH / simH;
+        for (const m of dustMotes) {
+          if (isPlaying) {
+            m.x += m.vx * windMult * dt;
+            m.y += m.vy * dt;
+            if (m.x > simW) m.x = 0;
+            if (m.y < 0) m.y = simH * 0.75;
+          }
+          const ix = Math.max(0, Math.min(simW - 1, m.x | 0));
+          const iy = Math.max(0, Math.min(simH - 1, m.y | 0));
+          if (skyMask && skyMask[iy * simW + ix] > 0.3) {
+            const tw = 0.45 + 0.55 * Math.sin(elapsed * 2.1 + m.phase);
+            ctx.fillStyle = `rgba(255, 244, 232, ${(m.alpha * tw).toFixed(3)})`;
+            ctx.beginPath();
+            ctx.arc(drawX + m.x * scaleX, drawY + m.y * scaleY, m.r * scaleX, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+      }
+
+      renderAnimatedLyrics(w, h, elapsed, bass);
+
+      requestAnimationFrame(render);
+    }
+
+    window.addEventListener("resize", resize);
+    resize();
+    loadAssets();
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>
